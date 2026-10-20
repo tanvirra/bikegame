@@ -1,0 +1,1281 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Superbike Racing</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            background-color: #050814;
+            color: #ffffff;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* Glassmorphism overlays */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .glass-btn {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.05));
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(8px);
+            transition: all 0.15s ease-out;
+        }
+        .glass-btn:active {
+            transform: scale(0.92);
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Action control button styling */
+        .ctrl-btn {
+            touch-action: manipulation;
+            border-radius: 9999px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            user-select: none;
+        }
+        .ctrl-btn:active {
+            transform: scale(0.92);
+            filter: brightness(1.25);
+        }
+
+        /* Custom speedo gauge ring */
+        .speed-ring {
+            stroke-dasharray: 283;
+            stroke-dashoffset: 283;
+            transition: stroke-dashoffset 0.1s linear;
+        }
+
+        /* Hide scrollbars completely */
+        ::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="select-none">
+
+    <!-- 3D Canvas Viewport -->
+    <div id="canvas-container"></div>
+
+    <!-- HUD Overlay (In-Game) -->
+    <div id="hud-layer" class="hidden absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-4 md:p-6">
+        <!-- Top Stats Bar -->
+        <div class="flex justify-between items-start w-full gap-2">
+            <!-- Left: Speedometer & Gear -->
+            <div class="glass-panel p-3 md:p-4 rounded-2xl flex items-center gap-4 border border-cyan-500/30">
+                <div class="relative w-16 h-16 md:w-20 md:h-20 flex items-center justify-center">
+                    <svg class="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="45" stroke="#1e293b" stroke-width="8" fill="transparent" />
+                        <circle id="speed-gauge" class="speed-ring" cx="50" cy="50" r="45" stroke="#06b6d4" stroke-width="8" stroke-linecap="round" fill="transparent" />
+                    </svg>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                        <span id="hud-speed" class="text-xl md:text-2xl font-black italic tracking-tighter text-cyan-400">0</span>
+                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest -mt-1">KM/H</span>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-slate-400 font-bold uppercase">Distance:</span>
+                        <span id="hud-dist" class="text-sm md:text-base font-extrabold text-white">0 / 5000m</span>
+                    </div>
+                    <div class="w-32 md:w-44 bg-slate-800 h-2 rounded-full overflow-hidden border border-slate-700">
+                        <div id="hud-progress" class="bg-gradient-to-r from-cyan-500 to-emerald-400 h-full w-0 transition-all duration-200"></div>
+                    </div>
+                    <div class="flex justify-between items-center text-[10px] text-slate-400 mt-0.5">
+                        <span id="hud-env" class="font-bold text-amber-400">Coastal Highway</span>
+                        <span id="hud-mode" class="font-bold text-purple-400">ROAD</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Level, Coins, Boost Indicators -->
+            <div class="flex flex-col items-end gap-2">
+                <div class="glass-panel px-4 py-2 rounded-xl flex items-center gap-3 border border-amber-500/30">
+                    <i class="fa-solid fa-coins text-amber-400 text-lg md:text-xl animate-pulse"></i>
+                    <span id="hud-coins" class="text-lg md:text-xl font-black text-amber-300">0</span>
+                </div>
+                <!-- NOS Meter Bar -->
+                <div class="glass-panel px-3 py-1.5 rounded-xl flex items-center gap-2 border border-blue-500/30 w-36 md:w-48">
+                    <i class="fa-solid fa-bolt text-cyan-400 text-xs"></i>
+                    <div class="flex-1 bg-slate-800 h-2 rounded-full overflow-hidden">
+                        <div id="hud-nos-bar" class="bg-gradient-to-r from-blue-500 to-cyan-300 h-full w-full"></div>
+                    </div>
+                    <span class="text-[10px] font-bold text-cyan-300">NOS</span>
+                </div>
+                <!-- Flight Energy Bar -->
+                <div class="glass-panel px-3 py-1.5 rounded-xl flex items-center gap-2 border border-purple-500/30 w-36 md:w-48">
+                    <i class="fa-solid fa-feather text-purple-400 text-xs"></i>
+                    <div class="flex-1 bg-slate-800 h-2 rounded-full overflow-hidden">
+                        <div id="hud-fly-bar" class="bg-gradient-to-r from-purple-500 to-fuchsia-300 h-full w-full"></div>
+                    </div>
+                    <span class="text-[10px] font-bold text-purple-300">WING</span>
+                </div>
+                <!-- Top Buttons (Camera Toggle, Sound) -->
+                <div class="flex gap-2 pointer-events-auto mt-1">
+                    <button id="btn-cam" class="glass-btn w-9 h-9 rounded-lg flex items-center justify-center text-white text-xs hover:bg-white/20">
+                        <i class="fa-solid fa-video"></i>
+                    </button>
+                    <button id="btn-audio" class="glass-btn w-9 h-9 rounded-lg flex items-center justify-center text-white text-xs hover:bg-white/20">
+                        <i id="icon-audio" class="fa-solid fa-volume-high text-emerald-400"></i>
+                    </button>
+                    <button id="btn-pause" class="glass-btn w-9 h-9 rounded-lg flex items-center justify-center text-white text-xs hover:bg-white/20">
+                        <i class="fa-solid fa-pause"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Notification Toast -->
+        <div id="hud-toast" class="self-center bg-slate-900/90 border border-cyan-500/50 text-cyan-300 font-extrabold px-6 py-2 rounded-full text-sm md:text-lg tracking-wider opacity-0 transition-opacity duration-300 shadow-2xl backdrop-blur-md">
+            BOOST READY!
+        </div>
+
+        <!-- Touch Controls Row: LEFT (Steering/Brake) vs RIGHT (Accel/Fly/Jump/NOS) -->
+        <div class="w-full flex justify-between items-end pointer-events-auto pb-2 px-1">
+            
+            <!-- LEFT SIDE CONTROLS: Left Arrow, Right Arrow, Brake -->
+            <div class="flex flex-col gap-3 items-start">
+                <div class="flex gap-2">
+                    <button id="ctrl-left" class="ctrl-btn w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-slate-600 text-cyan-400 text-2xl active:border-cyan-400">
+                        <i class="fa-solid fa-arrow-left"></i>
+                    </button>
+                    <button id="ctrl-right" class="ctrl-btn w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-slate-600 text-cyan-400 text-2xl active:border-cyan-400">
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </div>
+                <button id="ctrl-brake" class="ctrl-btn w-34 md:w-42 h-12 bg-gradient-to-r from-red-900/80 to-rose-950/90 border border-rose-500/50 text-rose-300 text-xs md:text-sm font-bold gap-2 px-4">
+                    <i class="fa-solid fa-angles-down"></i> ↓ BRAKE
+                </button>
+            </div>
+
+            <!-- RIGHT SIDE CONTROLS: Gas/Accel (Up Arrow), Jump, Fly, NOS -->
+            <div class="flex flex-col gap-2 items-end">
+                <div class="flex gap-2 items-center">
+                    <button id="ctrl-nos" class="ctrl-btn w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-cyan-600 to-blue-700 border border-cyan-300 text-white text-xs font-black shadow-lg">
+                        NOS
+                    </button>
+                    <button id="ctrl-fly" class="ctrl-btn w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-purple-600 to-fuchsia-700 border border-purple-300 text-white text-xs font-black shadow-lg">
+                        <i class="fa-solid fa-plane"></i>
+                    </button>
+                    <button id="ctrl-jump" class="ctrl-btn w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-amber-500 to-orange-600 border border-amber-300 text-white text-xs font-black shadow-lg">
+                        JUMP
+                    </button>
+                </div>
+                <!-- ACCELERATION / GAS BUTTON ON RIGHT SIDE WITH ACCEL ICON -->
+                <button id="ctrl-accel" class="ctrl-btn w-36 md:w-44 h-16 md:h-20 bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-500 border-2 border-emerald-300 text-white text-lg md:text-xl font-black gap-2 shadow-emerald-900/50">
+                    <i class="fa-solid fa-fire-flame-curved text-amber-300 text-2xl animate-pulse"></i> ACCEL
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- MAIN MENU OVERLAY -->
+    <div id="menu-main" class="absolute inset-0 z-20 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xl">
+        <div class="glass-panel w-full max-w-2xl rounded-3xl p-6 md:p-8 flex flex-col gap-6 border border-cyan-500/30 text-center">
+            
+            <!-- Header -->
+            <div>
+                <h1 class="text-3xl md:text-5xl font-black italic tracking-wider bg-gradient-to-r from-cyan-400 via-teal-300 to-amber-400 bg-clip-text text-transparent">
+                    SUPERBIKE VELOCITY
+                </h1>
+                <p class="text-xs md:text-sm text-slate-400 mt-1 uppercase tracking-widest font-semibold">
+                    3D High-Octane Extreme Flight & Racing Engine
+                </p>
+            </div>
+
+            <!-- Player Profile & Color Selector -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                <div class="bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
+                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Rider Name</label>
+                    <input id="input-rider" type="text" value="Apex Rider" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-cyan-300 font-bold focus:outline-none focus:border-cyan-500">
+                </div>
+
+                <div class="bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
+                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Bike Theme</label>
+                    <div class="flex gap-2 justify-between">
+                        <button class="theme-opt w-8 h-8 rounded-full bg-cyan-500 ring-2 ring-white border-2 border-slate-900" data-color="0x06b6d4"></button>
+                        <button class="theme-opt w-8 h-8 rounded-full bg-red-600 border-2 border-slate-900" data-color="0xdc2626"></button>
+                        <button class="theme-opt w-8 h-8 rounded-full bg-amber-400 border-2 border-slate-900" data-color="0xf59e0b"></button>
+                        <button class="theme-opt w-8 h-8 rounded-full bg-emerald-500 border-2 border-slate-900" data-color="0x10b981"></button>
+                        <button class="theme-opt w-8 h-8 rounded-full bg-purple-600 border-2 border-slate-900" data-color="0x9333ea"></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Level Selector Scroll -->
+            <div class="text-left">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Select Level (10 Environments - 5.0 km each)</span>
+                    <span id="coins-display" class="text-amber-400 font-bold text-sm"><i class="fa-solid fa-coins"></i> 0 Coins</span>
+                </div>
+                <div id="level-grid" class="grid grid-cols-2 sm:grid-cols-5 gap-2 max-h-40 overflow-y-auto pr-1">
+                    <!-- Dynamic Level Cards JS inserted -->
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-4">
+                <button id="btn-garage" class="glass-btn flex-1 py-3.5 rounded-2xl font-bold text-slate-200 hover:text-white border border-slate-700 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-warehouse text-cyan-400"></i> GARAGE UPGRADES
+                </button>
+                <button id="btn-start" class="flex-1 py-3.5 rounded-2xl font-black text-slate-950 bg-gradient-to-r from-cyan-400 via-teal-300 to-amber-400 hover:brightness-110 shadow-lg shadow-cyan-500/20 tracking-wider text-base md:text-lg flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-play"></i> START RACE
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- GARAGE MODAL OVERLAY -->
+    <div id="menu-garage" class="hidden absolute inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl">
+        <div class="glass-panel w-full max-w-xl rounded-3xl p-6 flex flex-col gap-5 border border-cyan-500/30">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h2 class="text-xl md:text-2xl font-black text-cyan-300 flex items-center gap-2">
+                    <i class="fa-solid fa-gears"></i> SUPERBIKE GARAGE
+                </h2>
+                <div class="text-amber-400 font-bold text-sm">
+                    <i class="fa-solid fa-coins"></i> <span id="garage-coins">0</span>
+                </div>
+            </div>
+
+            <!-- Upgrades List -->
+            <div class="flex flex-col gap-3" id="garage-list">
+                <!-- Upgrade rows added via JS -->
+            </div>
+
+            <button id="btn-close-garage" class="w-full py-3 rounded-2xl font-bold bg-slate-800 hover:bg-slate-700 text-white mt-2">
+                BACK TO MAIN MENU
+            </button>
+        </div>
+    </div>
+
+    <!-- PAUSE & VICTORY / GAMEOVER OVERLAY -->
+    <div id="menu-dialog" class="hidden absolute inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+        <div class="glass-panel w-full max-w-md rounded-3xl p-6 text-center flex flex-col gap-4 border border-cyan-500/40">
+            <h2 id="dialog-title" class="text-2xl md:text-3xl font-black tracking-wide text-cyan-400">RACE PAUSED</h2>
+            <p id="dialog-desc" class="text-slate-300 text-sm">Take a breather or customize controls.</p>
+            
+            <div id="dialog-stats" class="hidden bg-slate-900/80 p-4 rounded-2xl border border-slate-800 text-left text-xs space-y-1.5 my-1">
+                <div class="flex justify-between text-slate-400"><span>Track Length:</span> <span class="text-white font-bold">5.00 km</span></div>
+                <div class="flex justify-between text-slate-400"><span>Time Elapsed:</span> <span id="res-time" class="text-cyan-300 font-bold">0s</span></div>
+                <div class="flex justify-between text-slate-400"><span>Coins Collected:</span> <span id="res-coins" class="text-amber-400 font-bold">0</span></div>
+                <div class="flex justify-between text-slate-400"><span>Top Speed Achieved:</span> <span id="res-top-speed" class="text-emerald-400 font-bold">0 km/h</span></div>
+            </div>
+
+            <div class="flex gap-3 mt-2">
+                <button id="btn-dialog-main" class="flex-1 py-3 rounded-xl bg-slate-800 font-bold text-slate-300 hover:bg-slate-700">
+                    MAIN MENU
+                </button>
+                <button id="btn-dialog-action" class="flex-1 py-3 rounded-xl bg-cyan-500 font-black text-slate-950 hover:bg-cyan-400">
+                    RESUME
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ENGINE AUDIO & GAME LOGIC JS -->
+    <script>
+        /* =========================================================================
+           1. GAME CONFIGURATION & LEVEL ENVIRONMENTS DATA
+           ========================================================================= */
+        const TRACK_LENGTH = 5000; // 5.0 km per level
+        const TRACK_WIDTH = 18;    // Asphalt width
+
+        const ENVIRONMENTS = [
+            { name: "Coastal Highway", sky: 0x38bdf8, fog: 0xbae6fd, ground: 0x0284c7, road: 0x334155, line: 0xfacc15, accent: 0x0ea5e9, objType: 'palm' },
+            { name: "Desert Dunes", sky: 0xfdba74, fog: 0xffedd5, ground: 0xd97706, road: 0x475569, line: 0xffffff, accent: 0xf59e0b, objType: 'cactus' },
+            { name: "Forest Pass", sky: 0x4ade80, fog: 0xdcfce7, ground: 0x15803d, road: 0x1e293b, line: 0xfacc15, accent: 0x22c55e, objType: 'tree' },
+            { name: "Snow Peak", sky: 0xe0f2fe, fog: 0xf0f9ff, ground: 0xf1f5f9, road: 0x334155, line: 0x38bdf8, accent: 0x93c5fd, objType: 'snowtree' },
+            { name: "City Neon", sky: 0x090d16, fog: 0x0f172a, ground: 0x020617, road: 0x0f172a, line: 0x06b6d4, accent: 0xf43f5e, objType: 'building' },
+            { name: "Volcanic Ridge", sky: 0x450a0a, fog: 0x7f1d1d, ground: 0x18181b, road: 0x27272a, line: 0xef4444, accent: 0xf97316, objType: 'rock' },
+            { name: "Sunset Canyon", sky: 0xf43f5e, fog: 0xfecdd3, ground: 0x9f1239, road: 0x334155, line: 0xfde047, accent: 0xf43f5e, objType: 'cactus' },
+            { name: "Cyber Grid", sky: 0x2e1065, fog: 0x3b0764, ground: 0x581c87, road: 0x1e1b4b, line: 0xd8b4fe, accent: 0xa855f7, objType: 'pillar' },
+            { name: "Mountain Trail", sky: 0x64748b, fog: 0xcbd5e1, ground: 0x334155, road: 0x1e293b, line: 0xffffff, accent: 0x64748b, objType: 'rock' },
+            { name: "Cosmic Highway", sky: 0x030712, fog: 0x111827, ground: 0x030712, road: 0x1f2937, line: 0xec4899, accent: 0x8b5cf6, objType: 'crystal' }
+        ];
+
+        // Garage Upgrades configuration & state
+        const gameState = {
+            coins: parseInt(localStorage.getItem('sb_coins') || '150'),
+            currentLevel: 0,
+            bikeColor: 0x06b6d4,
+            upgrades: JSON.parse(localStorage.getItem('sb_upgrades') || JSON.stringify({
+                speed: 1,    // max speed multiplier
+                accel: 1,    // acceleration rate
+                handling: 1, // steer responsiveness
+                nos: 1,      // NOS duration & recharge
+                flight: 1    // flight energy limit
+            }))
+        };
+
+        function saveUserData() {
+            localStorage.setItem('sb_coins', gameState.coins.toString());
+            localStorage.setItem('sb_upgrades', JSON.stringify(gameState.upgrades));
+        }
+
+        /* =========================================================================
+           2. AUDIO SYNTHESIS ENGINE (WEB AUDIO API - DUAL OSCILLATORS + SFX)
+           ========================================================================= */
+        class AudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.isMuted = false;
+                this.oscEngine1 = null;
+                this.oscEngine2 = null;
+                this.gainEngine = null;
+                this.bgmOsc = null;
+                this.initialized = false;
+            }
+
+            init() {
+                if (this.initialized) return;
+                try {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioCtx();
+
+                    // Engine twin-cylinder synthesizer setup
+                    this.oscEngine1 = this.ctx.createOscillator();
+                    this.oscEngine2 = this.ctx.createOscillator();
+                    this.gainEngine = this.ctx.createGain();
+
+                    this.oscEngine1.type = 'sawtooth';
+                    this.oscEngine2.type = 'triangle';
+
+                    this.oscEngine1.frequency.value = 40;
+                    this.oscEngine2.frequency.value = 80;
+
+                    this.gainEngine.gain.value = 0.05;
+
+                    this.oscEngine1.connect(this.gainEngine);
+                    this.oscEngine2.connect(this.gainEngine);
+                    this.gainEngine.connect(this.ctx.destination);
+
+                    this.oscEngine1.start();
+                    this.oscEngine2.start();
+
+                    this.initialized = true;
+                } catch(e) {
+                    console.log("Audio not supported or blocked");
+                }
+            }
+
+            updateEnginePitch(speedKmH, isAccelerating) {
+                if (!this.initialized || this.isMuted) return;
+                const baseFreq = 40 + (speedKmH * 1.8);
+                const loadFactor = isAccelerating ? 1.25 : 1.0;
+                
+                this.oscEngine1.frequency.setTargetAtTime(baseFreq * loadFactor, this.ctx.currentTime, 0.05);
+                this.oscEngine2.frequency.setTargetAtTime((baseFreq * 2.01) * loadFactor, this.ctx.currentTime, 0.05);
+                this.gainEngine.gain.setTargetAtTime(Math.min(0.12, 0.02 + (speedKmH / 1000)), this.ctx.currentTime, 0.05);
+            }
+
+            playCoin() {
+                if (!this.initialized || this.isMuted) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(987.77, this.ctx.currentTime); // B5
+                osc.frequency.setValueAtTime(1318.51, this.ctx.currentTime + 0.08); // E6
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.25);
+            }
+
+            playNos() {
+                if (!this.initialized || this.isMuted) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(600, this.ctx.currentTime + 0.4);
+                gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.45);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.45);
+            }
+
+            playJump() {
+                if (!this.initialized || this.isMuted) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(500, this.ctx.currentTime + 0.2);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.2);
+            }
+
+            toggleMute() {
+                this.isMuted = !this.isMuted;
+                if (this.gainEngine) {
+                    this.gainEngine.gain.value = this.isMuted ? 0 : 0.05;
+                }
+                return this.isMuted;
+            }
+        }
+
+        const audio = new AudioEngine();
+
+        /* =========================================================================
+           3. THREE.JS SCENE, MOTORCYCLE MODEL & ENVIRONMENT GENERATION
+           ========================================================================= */
+        let scene, camera, renderer;
+        let bikeGroup, riderMesh, leftWing, rightWing, frontWheel, rearWheel, handlebarGroup;
+        let obstacles = [], coins = [], sceneryObjects = [];
+        let roadMesh, groundMesh, finishArch;
+
+        // Camera views: 0 = Chase, 1 = FPS Cockpit, 2 = Helmet, 3 = Top-down
+        let currentCamView = 0;
+
+        function initGraphics() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(ENVIRONMENTS[0].sky);
+            scene.fog = new THREE.FogExp2(ENVIRONMENTS[0].fog, 0.0035);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Lighting Setup
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            dirLight.position.set(20, 40, -20);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 150;
+            dirLight.shadow.camera.left = -25;
+            dirLight.shadow.camera.right = 25;
+            dirLight.shadow.camera.top = 25;
+            dirLight.shadow.camera.bottom = -25;
+            scene.add(dirLight);
+
+            // Build Motorcycle Mesh
+            createSuperbikeModel();
+
+            // Resize Event
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        /* 
+           Superbike Geometry Builder
+           Ensures perfect orientation: FRONT OF BIKE POINTS STRAIGHT ALONG +Z (FORWARD AXIS)
+        */
+        function createSuperbikeModel() {
+            bikeGroup = new THREE.Group();
+
+            const bodyColor = gameState.bikeColor;
+            const matPaint = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.3, metalness: 0.6 });
+            const matDark = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.8, metalness: 0.2 });
+            const matChrome = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.1, metalness: 0.95 });
+            const matGlass = new THREE.MeshPhysicalMaterial({ color: 0x06b6d4, transmission: 0.85, opacity: 1, transparent: true, roughness: 0 });
+            const matRubber = new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.9 });
+            const matGlow = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+
+            // Main Frame / Engine Core
+            const frameGeo = new THREE.BoxGeometry(0.5, 0.6, 1.6);
+            const frameMesh = new THREE.Mesh(frameGeo, matDark);
+            frameMesh.position.set(0, 0.7, 0);
+            bikeGroup.add(frameMesh);
+
+            // Fuel Tank & Side Fairing
+            const tankGeo = new THREE.BoxGeometry(0.65, 0.45, 0.9);
+            const tankMesh = new THREE.Mesh(tankGeo, matPaint);
+            tankMesh.position.set(0, 1.0, -0.1);
+            bikeGroup.add(tankMesh);
+
+            // Front Aerodynamic Fairing & Headlight Cowl (FACING FORWARD +Z)
+            const cowlGeo = new THREE.ConeGeometry(0.4, 0.8, 4);
+            const cowlMesh = new THREE.Mesh(cowlGeo, matPaint);
+            cowlMesh.rotation.x = Math.PI / 2; // Orient along Z
+            cowlMesh.position.set(0, 0.9, 0.8);
+            bikeGroup.add(cowlMesh);
+
+            // Headlight Glass
+            const lightGeo = new THREE.BoxGeometry(0.35, 0.15, 0.1);
+            const lightMesh = new THREE.Mesh(lightGeo, matGlow);
+            lightMesh.position.set(0, 0.85, 1.15);
+            bikeGroup.add(lightMesh);
+
+            // Windshield
+            const windGeo = new THREE.PlaneGeometry(0.4, 0.35);
+            const windMesh = new THREE.Mesh(windGeo, matGlass);
+            windMesh.position.set(0, 1.15, 0.75);
+            windMesh.rotation.x = -Math.PI / 6;
+            bikeGroup.add(windMesh);
+
+            // Clip-on Handlebars
+            handlebarGroup = new THREE.Group();
+            handlebarGroup.position.set(0, 1.05, 0.55);
+            
+            const barGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.9);
+            const barMesh = new THREE.Mesh(barGeo, matChrome);
+            barMesh.rotation.z = Math.PI / 2;
+            handlebarGroup.add(barMesh);
+
+            // Side Mirrors
+            const mirrorGeo = new THREE.BoxGeometry(0.12, 0.08, 0.02);
+            const mirrorL = new THREE.Mesh(mirrorGeo, matDark);
+            mirrorL.position.set(-0.45, 0.1, 0);
+            const mirrorR = mirrorL.clone();
+            mirrorR.position.x = 0.45;
+            handlebarGroup.add(mirrorL, mirrorR);
+            bikeGroup.add(handlebarGroup);
+
+            // Dual Wheels (Front & Rear)
+            const wheelGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.22, 24);
+            wheelGeo.rotateZ(Math.PI / 2); // Axis along X
+
+            // Front Wheel Assembly
+            frontWheel = new THREE.Mesh(wheelGeo, matRubber);
+            frontWheel.position.set(0, 0.45, 1.0);
+            frontWheel.castShadow = true;
+            bikeGroup.add(frontWheel);
+
+            // Rear Wheel Assembly
+            rearWheel = new THREE.Mesh(wheelGeo, matRubber);
+            rearWheel.position.set(0, 0.45, -0.9);
+            rearWheel.castShadow = true;
+            bikeGroup.add(rearWheel);
+
+            // Brake Discs
+            const discGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.24, 16);
+            discGeo.rotateZ(Math.PI / 2);
+            const discFront = new THREE.Mesh(discGeo, matChrome);
+            discFront.position.copy(frontWheel.position);
+            bikeGroup.add(discFront);
+
+            // Exhaust Pipe
+            const pipeGeo = new THREE.CylinderGeometry(0.06, 0.09, 0.8, 12);
+            const pipeMesh = new THREE.Mesh(pipeGeo, matChrome);
+            pipeMesh.rotation.x = Math.PI / 2.3;
+            pipeMesh.position.set(0.3, 0.5, -0.6);
+            bikeGroup.add(pipeMesh);
+
+            // Jet Wings (Deployable for Flight Mode 'F')
+            const wingGeo = new THREE.BoxGeometry(1.2, 0.04, 0.35);
+            leftWing = new THREE.Mesh(wingGeo, matPaint);
+            leftWing.position.set(-0.7, 0.8, -0.2);
+            leftWing.rotation.y = -Math.PI / 8;
+
+            rightWing = new THREE.Mesh(wingGeo, matPaint);
+            rightWing.position.set(0.7, 0.8, -0.2);
+            rightWing.rotation.y = Math.PI / 8;
+
+            // Initially folded in
+            leftWing.scale.set(0.1, 1, 1);
+            rightWing.scale.set(0.1, 1, 1);
+            bikeGroup.add(leftWing, rightWing);
+
+            // Mounted Rider Model
+            riderMesh = createRiderModel(matDark, matPaint, matGlass);
+            bikeGroup.add(riderMesh);
+
+            bikeGroup.position.set(0, 0, 0);
+            scene.add(bikeGroup);
+        }
+
+        // Rider Mesh crouching on bike
+        function createRiderModel(matSuit, matHelmet, matVisor) {
+            const rider = new THREE.Group();
+
+            // Torso (leaning forward)
+            const torsoGeo = new THREE.BoxGeometry(0.45, 0.6, 0.35);
+            const torso = new THREE.Mesh(torsoGeo, matSuit);
+            torso.position.set(0, 1.15, -0.1);
+            torso.rotation.x = Math.PI / 5; // Forward crouch
+            rider.add(torso);
+
+            // Racing Helmet
+            const helmetGeo = new THREE.SphereGeometry(0.22, 16, 16);
+            const helmet = new THREE.Mesh(helmetGeo, matHelmet);
+            helmet.position.set(0, 1.45, 0.15);
+            
+            // Helmet Visor (facing +Z)
+            const visorGeo = new THREE.BoxGeometry(0.2, 0.09, 0.15);
+            const visor = new THREE.Mesh(visorGeo, matVisor);
+            visor.position.set(0, 1.45, 0.28);
+            rider.add(helmet, visor);
+
+            return rider;
+        }
+
+        function updateBikeColor(hexColor) {
+            gameState.bikeColor = hexColor;
+            scene.remove(bikeGroup);
+            createSuperbikeModel();
+        }
+
+        /* 
+           Generate Level Track, Scenery, Obstacles, and Coins
+        */
+        function buildLevelTrack(envIndex) {
+            const env = ENVIRONMENTS[envIndex];
+            scene.background.setHex(env.sky);
+            scene.fog.color.setHex(env.fog);
+
+            // Clear old level meshes
+            obstacles.forEach(o => scene.remove(o.mesh));
+            coins.forEach(c => scene.remove(c.mesh));
+            sceneryObjects.forEach(s => scene.remove(s.mesh));
+            if (roadMesh) scene.remove(roadMesh);
+            if (groundMesh) scene.remove(groundMesh);
+            if (finishArch) scene.remove(finishArch);
+
+            obstacles = [];
+            coins = [];
+            sceneryObjects = [];
+
+            // Continuous Terrain Ground Plane
+            const groundGeo = new THREE.PlaneGeometry(600, TRACK_LENGTH + 400);
+            const groundMat = new THREE.MeshStandardMaterial({ color: env.ground, roughness: 0.9 });
+            groundMesh = new THREE.Mesh(groundGeo, groundMat);
+            groundMesh.rotation.x = -Math.PI / 2;
+            groundMesh.position.set(0, -0.05, TRACK_LENGTH / 2);
+            groundMesh.receiveShadow = true;
+            scene.add(groundMesh);
+
+            // Asphalt Road Texture Plane
+            const roadGeo = new THREE.PlaneGeometry(TRACK_WIDTH, TRACK_LENGTH);
+            const roadMat = new THREE.MeshStandardMaterial({ color: env.road, roughness: 0.5 });
+            roadMesh = new THREE.Mesh(roadGeo, roadMat);
+            roadMesh.rotation.x = -Math.PI / 2;
+            roadMesh.position.set(0, 0, TRACK_LENGTH / 2);
+            roadMesh.receiveShadow = true;
+            scene.add(roadMesh);
+
+            // Center Lane Dash Lines
+            const dashCount = Math.floor(TRACK_LENGTH / 10);
+            const dashGeo = new THREE.BoxGeometry(0.3, 0.02, 4);
+            const dashMat = new THREE.MeshBasicMaterial({ color: env.line });
+            const dashInstanced = new THREE.InstancedMesh(dashGeo, dashMat, dashCount);
+            
+            const dummy = new THREE.Object3D();
+            for (let i = 0; i < dashCount; i++) {
+                dummy.position.set(0, 0.02, i * 10);
+                dummy.updateMatrix();
+                dashInstanced.setMatrixAt(i, dummy.matrix);
+            }
+            scene.add(dashInstanced);
+
+            // Populate Roadside Scenery (Trees, Cacti, Neon Pillars)
+            const scenMat = new THREE.MeshStandardMaterial({ color: env.accent, roughness: 0.6 });
+            for (let z = 20; z < TRACK_LENGTH; z += 25) {
+                [-14, 14].forEach(x => {
+                    const sMesh = new THREE.Mesh(new THREE.ConeGeometry(1.5, 5, 6), scenMat);
+                    sMesh.position.set(x + (Math.random() * 4 - 2), 2.5, z);
+                    sMesh.castShadow = true;
+                    scene.add(sMesh);
+                    sceneryObjects.push({ mesh: sMesh });
+                });
+            }
+
+            // Spawn Obstacles & Ramps along the 5km Track
+            const obstacleMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.4 });
+            for (let z = 100; z < TRACK_LENGTH - 100; z += 40 + Math.random() * 30) {
+                const laneX = (Math.random() - 0.5) * (TRACK_WIDTH - 4);
+                
+                // 20% Chance for Ramp, 80% Traffic Barrier
+                if (Math.random() < 0.25) {
+                    const rampGeo = new THREE.BoxGeometry(3.5, 0.8, 4);
+                    const rampMesh = new THREE.Mesh(rampGeo, obstacleMat);
+                    rampMesh.position.set(laneX, 0.2, z);
+                    rampMesh.rotation.x = -Math.PI / 12; // Incline ramp
+                    scene.add(rampMesh);
+                    obstacles.push({ mesh: rampMesh, type: 'ramp', bounds: { x: laneX, z, radius: 2 } });
+                } else {
+                    const barrierGeo = new THREE.BoxGeometry(2.8, 1.0, 0.8);
+                    const barrierMesh = new THREE.Mesh(barrierGeo, obstacleMat);
+                    barrierMesh.position.set(laneX, 0.5, z);
+                    barrierMesh.castShadow = true;
+                    scene.add(barrierMesh);
+                    obstacles.push({ mesh: barrierMesh, type: 'barrier', bounds: { x: laneX, z, radius: 1.5 } });
+                }
+            }
+
+            // Spawn Gold Collectible Coins (Ground + Flying Altitude)
+            const coinGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.1, 16);
+            const coinMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.9, roughness: 0.1 });
+
+            for (let z = 50; z < TRACK_LENGTH - 50; z += 20) {
+                const laneX = (Math.random() - 0.5) * (TRACK_WIDTH - 3);
+                const isAirCoin = Math.random() < 0.3; // 30% floating high for Flight Mode
+                const coinY = isAirCoin ? 8.0 + Math.random() * 6 : 0.8;
+
+                const cMesh = new THREE.Mesh(coinGeo, coinMat);
+                cMesh.rotation.x = Math.PI / 2;
+                cMesh.position.set(laneX, coinY, z);
+                scene.add(cMesh);
+
+                coins.push({ mesh: cMesh, collected: false, x: laneX, y: coinY, z });
+            }
+
+            // Finish Line Arch Archway at 5,000m
+            finishArch = new THREE.Group();
+            const pillarGeo = new THREE.BoxGeometry(1.5, 10, 1.5);
+            const pMat = new THREE.MeshStandardMaterial({ color: 0x10b981, metalness: 0.8 });
+            const pL = new THREE.Mesh(pillarGeo, pMat); pL.position.set(-10, 5, TRACK_LENGTH);
+            const pR = new THREE.Mesh(pillarGeo, pMat); pR.position.set(10, 5, TRACK_LENGTH);
+            const topBar = new THREE.Mesh(new THREE.BoxGeometry(22, 1.8, 1.8), pMat);
+            topBar.position.set(0, 10, TRACK_LENGTH);
+
+            finishArch.add(pL, pR, topBar);
+            scene.add(finishArch);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        /* =========================================================================
+           4. GAME CONTROL INPUTS (TOUCH & KEYBOARD MAPPING)
+           ========================================================================= */
+        const inputState = {
+            left: false,
+            right: false,
+            accel: false,
+            brake: false,
+            nos: false,
+            fly: false,
+            jump: false
+        };
+
+        function setupControls() {
+            // Keyboard listeners
+            window.addEventListener('keydown', (e) => {
+                if (e.code === 'ArrowLeft' || e.code === 'KeyA') inputState.left = true;
+                if (e.code === 'ArrowRight' || e.code === 'KeyD') inputState.right = true;
+                if (e.code === 'ArrowUp' || e.code === 'KeyW') inputState.accel = true;
+                if (e.code === 'ArrowDown' || e.code === 'KeyS') inputState.brake = true;
+                if (e.code === 'KeyN') inputState.nos = true;
+                if (e.code === 'KeyF') inputState.fly = true;
+                if (e.code === 'KeyJ' || e.code === 'Space') inputState.jump = true;
+                if (e.code === 'KeyC') toggleCameraView();
+            });
+
+            window.addEventListener('keyup', (e) => {
+                if (e.code === 'ArrowLeft' || e.code === 'KeyA') inputState.left = false;
+                if (e.code === 'ArrowRight' || e.code === 'KeyD') inputState.right = false;
+                if (e.code === 'ArrowUp' || e.code === 'KeyW') inputState.accel = false;
+                if (e.code === 'ArrowDown' || e.code === 'KeyS') inputState.brake = false;
+                if (e.code === 'KeyN') inputState.nos = false;
+                if (e.code === 'KeyF') inputState.fly = false;
+                if (e.code === 'KeyJ' || e.code === 'Space') inputState.jump = false;
+            });
+
+            // Touch Control Button Binding
+            bindTouchBtn('ctrl-left', 'left');
+            bindTouchBtn('ctrl-right', 'right');
+            bindTouchBtn('ctrl-accel', 'accel');
+            bindTouchBtn('ctrl-brake', 'brake');
+            bindTouchBtn('ctrl-nos', 'nos');
+            bindTouchBtn('ctrl-fly', 'fly');
+            bindTouchBtn('ctrl-jump', 'jump');
+
+            // Top HUD Buttons
+            document.getElementById('btn-cam').addEventListener('click', toggleCameraView);
+            document.getElementById('btn-audio').addEventListener('click', () => {
+                const muted = audio.toggleMute();
+                document.getElementById('icon-audio').className = muted ? 
+                    "fa-solid fa-volume-xmark text-rose-400" : "fa-solid fa-volume-high text-emerald-400";
+            });
+            document.getElementById('btn-pause').addEventListener('click', pauseGame);
+        }
+
+        function bindTouchBtn(btnId, actionKey) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+
+            const startAction = (e) => {
+                e.preventDefault();
+                audio.init();
+                inputState[actionKey] = true;
+            };
+            const endAction = (e) => {
+                e.preventDefault();
+                inputState[actionKey] = false;
+            };
+
+            btn.addEventListener('touchstart', startAction, { passive: false });
+            btn.addEventListener('touchend', endAction, { passive: false });
+            btn.addEventListener('mousedown', startAction);
+            btn.addEventListener('mouseup', endAction);
+            btn.addEventListener('mouseleave', endAction);
+        }
+
+        function toggleCameraView() {
+            currentCamView = (currentCamView + 1) % 4;
+            let camToast = ["CHASE VIEW", "COCKPIT FPS", "HELMET CAM", "TOP DOWN"][currentCamView];
+            showToast(camToast);
+        }
+
+        /* =========================================================================
+           5. GAME LOOP & PHYSICS ENGINE
+           ========================================================================= */
+        let isPlaying = false;
+        let isPaused = false;
+        let gameTime = 0;
+        let speed = 0;             // Current forward velocity (m/s)
+        let posX = 0;              // Steering position offset X
+        let posY = 0;              // Altitude Y (Jumping / Flying)
+        let posZ = 0;              // Track distance forward Z (0 -> 5000)
+        let velY = 0;              // Vertical velocity for physics gravity
+        let nosGauge = 100;        // NOS Energy percentage
+        let flyEnergy = 100;       // Flight Energy percentage
+        let topSpeedAchieved = 0;
+        let coinsCollectedThisRace = 0;
+
+        function startGame(levelIndex) {
+            audio.init();
+            gameState.currentLevel = levelIndex;
+            buildLevelTrack(levelIndex);
+
+            // Reset dynamic variables
+            posX = 0;
+            posY = 0;
+            posZ = 0;
+            speed = 0;
+            velY = 0;
+            nosGauge = 100;
+            flyEnergy = 100;
+            gameTime = 0;
+            coinsCollectedThisRace = 0;
+            topSpeedAchieved = 0;
+
+            isPlaying = true;
+            isPaused = false;
+
+            document.getElementById('menu-main').classList.add('hidden');
+            document.getElementById('menu-dialog').classList.add('hidden');
+            document.getElementById('hud-layer').classList.remove('hidden');
+
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function pauseGame() {
+            if (!isPlaying) return;
+            isPaused = true;
+            document.getElementById('dialog-title').innerText = "RACE PAUSED";
+            document.getElementById('dialog-desc').innerText = "Take a quick break or check settings.";
+            document.getElementById('dialog-stats').classList.add('hidden');
+            document.getElementById('btn-dialog-action').innerText = "RESUME";
+            document.getElementById('btn-dialog-action').onclick = resumeGame;
+            document.getElementById('menu-dialog').classList.remove('hidden');
+        }
+
+        function resumeGame() {
+            isPaused = false;
+            document.getElementById('menu-dialog').classList.add('hidden');
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function finishRace(success) {
+            isPlaying = false;
+            gameState.coins += coinsCollectedThisRace;
+            saveUserData();
+
+            document.getElementById('dialog-title').innerText = success ? "LEVEL COMPLETED!" : "RACE FAILED";
+            document.getElementById('dialog-desc').innerText = success ? "Awesome riding! Coins earned have been added." : "You crashed out or ran out of momentum!";
+            
+            document.getElementById('res-time').innerText = `${gameTime.toFixed(1)}s`;
+            document.getElementById('res-coins').innerText = `+${coinsCollectedThisRace}`;
+            document.getElementById('res-top-speed').innerText = `${Math.round(topSpeedAchieved)} km/h`;
+            document.getElementById('dialog-stats').classList.remove('hidden');
+
+            document.getElementById('btn-dialog-action').innerText = success ? "NEXT LEVEL" : "RETRY";
+            document.getElementById('btn-dialog-action').onclick = () => {
+                const nextLvl = success ? Math.min(9, gameState.currentLevel + 1) : gameState.currentLevel;
+                startGame(nextLvl);
+            };
+
+            document.getElementById('menu-dialog').classList.remove('hidden');
+        }
+
+        let lastTime = 0;
+
+        function gameLoop(now) {
+            if (!isPlaying || isPaused) return;
+
+            const dt = Math.min((now - lastTime) / 1000, 0.1); // Delta time capped
+            lastTime = now;
+            gameTime += dt;
+
+            // Player Stat Multipliers from Upgrades
+            const maxSpeedBase = (220 + (gameState.upgrades.speed * 15)) / 3.6; // Convert km/h to m/s
+            const accelRate = 18 * gameState.upgrades.accel;
+            const handlingRate = 12 * gameState.upgrades.handling;
+
+            // Boost multiplier
+            let currentMaxSpeed = maxSpeedBase;
+            if (inputState.nos && nosGauge > 0) {
+                currentMaxSpeed *= 1.45; // NOS boost speed up to ~260+ km/h
+                nosGauge = Math.max(0, nosGauge - (25 / gameState.upgrades.nos) * dt);
+                audio.playNos();
+            } else if (nosGauge < 100) {
+                nosGauge = Math.min(100, nosGauge + 10 * dt); // NOS Recharge
+            }
+
+            // Speed Acceleration & Braking Physics
+            if (inputState.accel) {
+                speed = Math.min(currentMaxSpeed, speed + accelRate * dt);
+            } else if (inputState.brake) {
+                speed = Math.max(0, speed - 35 * dt);
+            } else {
+                speed = Math.max(0, speed - 8 * dt); // Natural friction drag
+            }
+
+            // Steering Left / Right
+            if (inputState.left) posX -= handlingRate * dt;
+            if (inputState.right) posX += handlingRate * dt;
+            posX = Math.max(-TRACK_WIDTH / 2 + 0.8, Math.min(TRACK_WIDTH / 2 - 0.8, posX)); // Clamp inside road edges
+
+            // Jump Physics ('J' Button)
+            if (inputState.jump && posY <= 0.05) {
+                velY = 10.0; // Instant jump impulse upward
+                audio.playJump();
+            }
+
+            // Flying Flight Mode ('F' Button with Jet Wings)
+            const isFlying = inputState.fly && flyEnergy > 0;
+            if (isFlying) {
+                velY = 6.0; // Lift upward
+                flyEnergy = Math.max(0, flyEnergy - (20 / gameState.upgrades.flight) * dt);
+                
+                // Deploy Jet-wings outwards smoothly
+                leftWing.scale.x = THREE.MathUtils.lerp(leftWing.scale.x, 1.0, 0.1);
+                rightWing.scale.x = THREE.MathUtils.lerp(rightWing.scale.x, 1.0, 0.1);
+            } else {
+                if (flyEnergy < 100) flyEnergy = Math.min(100, flyEnergy + 8 * dt);
+                
+                // Retract Jet-wings
+                leftWing.scale.x = THREE.MathUtils.lerp(leftWing.scale.x, 0.1, 0.1);
+                rightWing.scale.x = THREE.MathUtils.lerp(rightWing.scale.x, 0.1, 0.1);
+            }
+
+            // Gravity & Altitude Update
+            posY += velY * dt;
+            if (!isFlying) velY -= 22.0 * dt; // Gravity pulling down
+
+            if (posY <= 0) {
+                posY = 0;
+                velY = 0;
+            }
+
+            // Forward Track Displacement
+            posZ += speed * dt;
+
+            // Dynamic Rider Lean Angle into turns
+            const leanTarget = inputState.left ? 0.35 : (inputState.right ? -0.35 : 0);
+            bikeGroup.rotation.z = THREE.MathUtils.lerp(bikeGroup.rotation.z, leanTarget, 0.1);
+
+            // Wheels Rotation animation
+            const wheelSpin = speed * dt * 3;
+            frontWheel.rotation.x += wheelSpin;
+            rearWheel.rotation.x += wheelSpin;
+
+            // Handlebars turning angle
+            handlebarGroup.rotation.y = THREE.MathUtils.lerp(handlebarGroup.rotation.y, inputState.left ? 0.2 : (inputState.right ? -0.2 : 0), 0.15);
+
+            // Update Motorcycle Mesh Position
+            bikeGroup.position.set(posX, posY, posZ);
+
+            // Update Audio Rev Pitch
+            const kmh = speed * 3.6;
+            if (kmh > topSpeedAchieved) topSpeedAchieved = kmh;
+            audio.updateEnginePitch(kmh, inputState.accel);
+
+            // Camera Tracking Modes
+            updateCameraPosition();
+
+            // Collision Detection with Obstacles & Ramps
+            checkObstacleCollisions();
+
+            // Coin Pickup Collisions
+            checkCoinPickups();
+
+            // HUD Refresh
+            updateHUD(kmh);
+
+            // Check Level Completion (5,000m reached)
+            if (posZ >= TRACK_LENGTH) {
+                finishRace(true);
+                return;
+            }
+
+            // Render 3D Frame
+            renderer.render(scene, camera);
+            requestAnimationFrame(gameLoop);
+        }
+
+        /* 
+           Camera View Modes (0: Chase, 1: Cockpit FPS, 2: Helmet, 3: Top-Down)
+        */
+        function updateCameraPosition() {
+            if (currentCamView === 0) { // Chase View
+                camera.position.set(posX * 0.7, posY + 2.8, posZ - 6.5);
+                camera.lookAt(posX, posY + 1.2, posZ + 10);
+            } else if (currentCamView === 1) { // Cockpit FPS View
+                camera.position.set(posX, posY + 1.25, posZ + 0.3);
+                camera.lookAt(posX, posY + 1.1, posZ + 20);
+            } else if (currentCamView === 2) { // Helmet View
+                camera.position.set(posX, posY + 1.5, posZ + 0.1);
+                camera.lookAt(posX, posY + 1.3, posZ + 20);
+            } else if (currentCamView === 3) { // Top-Down View
+                camera.position.set(posX, posY + 20, posZ + 2);
+                camera.lookAt(posX, posY, posZ + 10);
+            }
+        }
+
+        /* 
+           Obstacle & Ramp Physics Collisions
+        */
+        function checkObstacleCollisions() {
+            for (let obs of obstacles) {
+                const dz = Math.abs(posZ - obs.bounds.z);
+                const dx = Math.abs(posX - obs.bounds.x);
+
+                if (dz < 1.2 && dx < obs.bounds.radius && posY < 1.5) {
+                    if (obs.type === 'ramp') {
+                        velY = 14.0; // Launch high into the air!
+                        showToast("AIRTIME RAMP!");
+                        audio.playJump();
+                    } else if (obs.type === 'barrier') {
+                        speed *= 0.3; // Crash slowdown penalty
+                        showToast("CRASH PENALTY! -SPEED");
+                    }
+                }
+            }
+        }
+
+        /* 
+           Gold Coin Pickup Collisions
+        */
+        function checkCoinPickups() {
+            for (let coin of coins) {
+                if (coin.collected) continue;
+
+                // Animate spinning coin
+                coin.mesh.rotation.z += 0.05;
+
+                const dz = Math.abs(posZ - coin.z);
+                const dx = Math.abs(posX - coin.x);
+                const dy = Math.abs(posY - coin.y);
+
+                if (dz < 1.5 && dx < 1.2 && dy < 1.8) {
+                    coin.collected = true;
+                    scene.remove(coin.mesh);
+                    coinsCollectedThisRace += 10;
+                    audio.playCoin();
+                }
+            }
+        }
+
+        /* =========================================================================
+           6. HUD & UI INTERACTION HANDLERS
+           ========================================================================= */
+        function updateHUD(speedKmH) {
+            document.getElementById('hud-speed').innerText = Math.round(speedKmH);
+            
+            // Gauge Circular Ring progress
+            const speedGauge = document.getElementById('speed-gauge');
+            const percent = Math.min(1.0, speedKmH / 280);
+            const offset = 283 - (283 * percent);
+            speedGauge.style.strokeDashoffset = offset;
+
+            // Distance Progress
+            document.getElementById('hud-dist').innerText = `${Math.min(5000, Math.round(posZ))} / 5000m`;
+            const progPercent = Math.min(100, (posZ / TRACK_LENGTH) * 100);
+            document.getElementById('hud-progress').style.width = `${progPercent}%`;
+
+            // Coins, NOS, and Flight Meters
+            document.getElementById('hud-coins').innerText = gameState.coins + coinsCollectedThisRace;
+            document.getElementById('hud-nos-bar').style.width = `${nosGauge}%`;
+            document.getElementById('hud-fly-bar').style.width = `${flyEnergy}%`;
+
+            // Flight vs Road indicator
+            document.getElementById('hud-mode').innerText = posY > 1.0 ? "AIRBORNE FLYING" : "ROAD SURFACE";
+            document.getElementById('hud-env').innerText = ENVIRONMENTS[gameState.currentLevel].name;
+        }
+
+        let toastTimer = null;
+        function showToast(msg) {
+            const toast = document.getElementById('hud-toast');
+            toast.innerText = msg;
+            toast.style.opacity = '1';
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 1500);
+        }
+
+        /* Render Level Cards in Menu */
+        function renderLevelCards() {
+            const grid = document.getElementById('level-grid');
+            grid.innerHTML = '';
+
+            ENVIRONMENTS.forEach((env, idx) => {
+                const card = document.createElement('button');
+                card.className = `p-2.5 rounded-xl border flex flex-col items-center text-center transition-all ${
+                    idx === gameState.currentLevel ? 'bg-cyan-950/80 border-cyan-400 text-white' : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-600'
+                }`;
+                card.onclick = () => {
+                    gameState.currentLevel = idx;
+                    renderLevelCards();
+                };
+
+                card.innerHTML = `
+                    <span class="text-[10px] font-black uppercase text-cyan-400">LVL ${idx + 1}</span>
+                    <span class="text-xs font-bold truncate w-full mt-0.5">${env.name}</span>
+                `;
+                grid.appendChild(card);
+            });
+
+            document.getElementById('coins-display').innerHTML = `<i class="fa-solid fa-coins"></i> ${gameState.coins} Coins`;
+        }
+
+        /* Garage Upgrades Render */
+        function renderGarage() {
+            const list = document.getElementById('garage-list');
+            list.innerHTML = '';
+            document.getElementById('garage-coins').innerText = gameState.coins;
+
+            const upgradeConfigs = [
+                { key: 'speed', name: 'Top Speed Engine', icon: 'fa-gauge-high', cost: 100 },
+                { key: 'accel', name: 'Throttle Response', icon: 'fa-bolt', cost: 80 },
+                { key: 'handling', name: 'Steering Grip', icon: 'fa-dharmachakra', cost: 70 },
+                { key: 'nos', name: 'NOS Capacity', icon: 'fa-fire', cost: 90 },
+                { key: 'flight', name: 'Jet Wings Thrust', icon: 'fa-plane', cost: 120 }
+            ];
+
+            upgradeConfigs.forEach(cfg => {
+                const currentLvl = gameState.upgrades[cfg.key];
+                const cost = cfg.cost * currentLvl;
+
+                const row = document.createElement('div');
+                row.className = 'bg-slate-900/80 p-3 rounded-2xl border border-slate-800 flex justify-between items-center';
+                row.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <i class="fa-solid ${cfg.icon} text-cyan-400 text-lg"></i>
+                        <div>
+                            <div class="text-sm font-bold text-white">${cfg.name}</div>
+                            <div class="text-[10px] text-slate-400">Level ${currentLvl} / 5</div>
+                        </div>
+                    </div>
+                    <button class="buy-btn px-4 py-1.5 rounded-xl text-xs font-black ${
+                        currentLvl >= 5 ? 'bg-slate-800 text-slate-500 cursor-default' : (gameState.coins >= cost ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 hover:brightness-110' : 'bg-slate-800 text-slate-500')
+                    }">
+                        ${currentLvl >= 5 ? 'MAXED' : `<i class="fa-solid fa-coins"></i> ${cost}`}
+                    </button>
+                `;
+
+                if (currentLvl < 5) {
+                    row.querySelector('.buy-btn').onclick = () => {
+                        if (gameState.coins >= cost) {
+                            gameState.coins -= cost;
+                            gameState.upgrades[cfg.key] += 1;
+                            saveUserData();
+                            renderGarage();
+                            renderLevelCards();
+                        }
+                    };
+                }
+                list.appendChild(row);
+            });
+        }
+
+        /* =========================================================================
+           7. INITIALIZATION AND STARTUP
+           ========================================================================= */
+        window.onload = function() {
+            initGraphics();
+            setupControls();
+            renderLevelCards();
+
+            // Menu Color Theme buttons
+            document.querySelectorAll('.theme-opt').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const hex = parseInt(e.target.dataset.color);
+                    updateBikeColor(hex);
+                    document.querySelectorAll('.theme-opt').forEach(b => b.classList.remove('ring-2', 'ring-white'));
+                    e.target.classList.add('ring-2', 'ring-white');
+                });
+            });
+
+            // Start Button
+            document.getElementById('btn-start').addEventListener('click', () => {
+                startGame(gameState.currentLevel);
+            });
+
+            // Garage Overlay Toggle
+            document.getElementById('btn-garage').addEventListener('click', () => {
+                renderGarage();
+                document.getElementById('menu-garage').classList.remove('hidden');
+            });
+            document.getElementById('btn-close-garage').addEventListener('click', () => {
+                document.getElementById('menu-garage').classList.add('hidden');
+            });
+
+            // Dialog Main Menu Button
+            document.getElementById('btn-dialog-main').addEventListener('click', () => {
+                isPlaying = false;
+                document.getElementById('menu-dialog').classList.add('hidden');
+                document.getElementById('hud-layer').classList.add('hidden');
+                document.getElementById('menu-main').classList.remove('hidden');
+                renderLevelCards();
+            });
+        };
+    </script>
+</body>
+</html>
+```
